@@ -1,36 +1,27 @@
 <?php
 
-$url = "https://sistema-chamado-production.up.railway.app/API/webhook.php";
+header("Content-Type: application/json; charset=utf-8");
 
-$dados = [
-    "nome" => "Davidson",
-    "cpf" => "000.000.000-00",
-    "matricula" => "12345",
-    "setor" => "Administracao",
-    "categoria" => "Computador",
-    "descricao" => "Teste da API online",
-    "prioridade" => "Alta"
-];
+require_once __DIR__ . "/../config/conexao.php";
 
-$ch = curl_init($url);
+try {
+    $resultado = $pdo->query("SELECT 1")->fetchColumn();
 
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($dados));
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Content-Type: application/json"
-]);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    if ((int) $resultado === 1) {
+        echo json_encode([
+            "sucesso" => true,
+            "mensagem" => "Conexao com o banco funcionando!",
+            "banco" => "Conectado"
+        ], JSON_UNESCAPED_UNICODE);
+    }
 
-$resposta = curl_exec($ch);
+} catch (PDOException $e) {
+    error_log("Falha no teste de conexao: " . $e->getMessage());
 
-if ($resposta === false) {
-    echo "Erro: " . curl_error($ch);
-} else {
-    echo "<h2>Resposta do Webhook:</h2>";
-    echo "<pre>";
-    echo htmlspecialchars($resposta);
-    echo "</pre>";
+    http_response_code(500);
+
+    echo json_encode([
+        "sucesso" => false,
+        "mensagem" => "Falha ao testar a conexao."
+    ], JSON_UNESCAPED_UNICODE);
 }
-
-curl_close($ch);
-?>
