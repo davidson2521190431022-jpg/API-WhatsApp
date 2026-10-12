@@ -1,27 +1,58 @@
+
 <?php
 
-header("Content-Type: application/json; charset=utf-8");
+header("Content-Type: text/html; charset=utf-8");
 
-require_once __DIR__ . "/../config/conexao.php";
+// Endereço atual da API no Railway
+$url = "https://sistema-de-chamado.up.railway.app/API/criar.php";
 
-try {
-    $resultado = $pdo->query("SELECT 1")->fetchColumn();
+// Dados fictícios para testar o cadastro
+$dados = [
+    "nome" => "Davidson - Teste API",
+    "cpf" => "000.000.000-00",
+    "matricula" => "12345",
+    "setor" => "Administracao",
+    "categoria" => "Computador",
+    "descricao" => "Teste de cadastro da API no Railway",
+    "prioridade" => "Alta"
+];
 
-    if ((int) $resultado === 1) {
-        echo json_encode([
-            "sucesso" => true,
-            "mensagem" => "Conexao com o banco funcionando!",
-            "banco" => "Conectado"
-        ], JSON_UNESCAPED_UNICODE);
-    }
+$ch = curl_init($url);
 
-} catch (PDOException $e) {
-    error_log("Falha no teste de conexao: " . $e->getMessage());
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt(
+    $ch,
+    CURLOPT_POSTFIELDS,
+    json_encode($dados, JSON_UNESCAPED_UNICODE)
+);
 
-    http_response_code(500);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "Content-Type: application/json"
+]);
 
-    echo json_encode([
-        "sucesso" => false,
-        "mensagem" => "Falha ao testar a conexao."
-    ], JSON_UNESCAPED_UNICODE);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+
+$resposta = curl_exec($ch);
+
+$erro = curl_error($ch);
+$codigoHTTP = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+curl_close($ch);
+
+echo "<h2>Teste de cadastro da API</h2>";
+
+if ($resposta === false) {
+    echo "<p>Erro na requisicao: "
+        . htmlspecialchars($erro)
+        . "</p>";
+    exit;
 }
+
+echo "<p>Codigo HTTP: " . $codigoHTTP . "</p>";
+
+echo "<pre>";
+echo htmlspecialchars($resposta, ENT_QUOTES, "UTF-8");
+echo "</pre>";
+
+?>
