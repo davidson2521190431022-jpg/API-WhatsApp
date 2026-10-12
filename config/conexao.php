@@ -1,34 +1,52 @@
+
 <?php
+
+date_default_timezone_set('America/Sao_Paulo');
 
 $url = getenv('DATABASE_URL');
 
-if ($url) {
-    $partes = parse_url($url);
+if (!$url) {
+    error_log('A variável DATABASE_URL não está configurada.');
 
-    $servidor = $partes['host'] ?? 'localhost';
-    $porta = $partes['port'] ?? 3306;
-    $usuario = rawurldecode($partes['user'] ?? '');
-    $senha = rawurldecode($partes['pass'] ?? '');
-    $banco = isset($partes['path'])
-        ? ltrim($partes['path'], '/')
-        : '';
-} else {
-    $servidor = 'localhost';
-    $porta = 3306;
-    $usuario = 'root';
-    $senha = '';
-    $banco = 'sistema_chamados';
+    http_response_code(500);
+    exit('Configuração do banco de dados indisponível.');
 }
 
-try {
-    $pdo = new PDO(
-        "mysql:host=$servidor;port=$porta;dbname=$banco;charset=utf8mb4",
-        $usuario,
-        $senha
-    );
+$partes = parse_url($url);
 
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+if (
+    $partes === false ||
+    empty($partes['host']) ||
+    empty($partes['user']) ||
+    empty($partes['path'])
+) {
+    error_log('A variável DATABASE_URL está inválida.');
+
+    http_response_code(500);
+    exit('Configuração do banco de dados inválida.');
+}
+
+$servidor = $partes['host'];
+$porta = $partes['port'] ?? 3306;
+$usuario = rawurldecode($partes['user']);
+$senha = rawurldecode($partes['pass'] ?? '');
+$banco = rawurldecode(ltrim($partes['path'], '/'));
+
+try {
+    $dsn = "mysql:host=$servidor;"
+         . "port=$porta;"
+         . "dbname=$banco;"
+         . "charset=utf8mb4";
+
+    $pdo = new PDO($dsn, $usuario, $senha, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false
+    ]);
 
 } catch (PDOException $e) {
-    die("Erro na conexão com o banco: " . $e->getMessage());
+    error_log('Erro de conexão com o banco: ' . $e->getMessage());
+
+    http_response_code(500);
+    exit('Não foi possível conectar ao banco de dados.');
 }
