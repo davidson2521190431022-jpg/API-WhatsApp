@@ -1,459 +1,192 @@
-
-<?php
-
-header("Content-Type: application/json; charset=utf-8");
-
-require_once "../config/conexao.php";
-
-/*
-|--------------------------------------------------------------------------
-| ENVIA MENSAGEM PELO WHATSAPP
-|--------------------------------------------------------------------------
-*/
-
-function enviarMensagemWhatsApp($destinatario, $mensagem)
-{
-    $token = getenv("WHATSAPP_ACCESS_TOKEN");
-    $phoneNumberId = getenv("WHATSAPP_PHONE_NUMBER_ID");
-    $versao = getenv("WHATSAPP_GRAPH_VERSION") ?: "v26.0";
-
-    if (!$token) {
-        error_log("WHATSAPP ERRO: WHATSAPP_ACCESS_TOKEN nao configurado.");
-        return false;
-    }
-
-    if (!$phoneNumberId) {
-        error_log("WHATSAPP ERRO: WHATSAPP_PHONE_NUMBER_ID nao configurado.");
-        return false;
-    }
-
-    if (!function_exists("curl_init")) {
-        error_log("WHATSAPP ERRO: extensao cURL nao esta instalada.");
-        return false;
-    }
-
-    $url = "https://graph.facebook.com/{$versao}/{$phoneNumberId}/messages";
-
-    $dados = [
-        "messaging_product" => "whatsapp",
-        "to" => $destinatario,
-        "type" => "text",
-        "text" => [
-            "body" => $mensagem
-        ]
-    ];
-
-    $jsonDados = json_encode(
-        $dados,
-        JSON_UNESCAPED_UNICODE
-    );
-
-    $ch = curl_init($url);
-
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => [
-            "Authorization: Bearer " . $token,
-            "Content-Type: application/json"
-        ],
-        CURLOPT_POSTFIELDS => $jsonDados,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 20
-    ]);
-
-    $resposta = curl_exec($ch);
-
-    $erroCurl = curl_error($ch);
-    $codigoHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-    curl_close($ch);
-
-    error_log("WHATSAPP ENVIO HTTP: " . $codigoHttp);
-    error_log("WHATSAPP ENVIO CURL: " . ($erroCurl ?: "nenhum erro"));
-    error_log("WHATSAPP ENVIO RESPOSTA: " . ($resposta ?: "resposta vazia"));
-
-    return $resposta;
-}
-
-/*
-|--------------------------------------------------------------------------
-| VERIFICAÇÃO DO WEBHOOK DA META
-|--------------------------------------------------------------------------
-*/
-
-if ($_SERVER["REQUEST_METHOD"] === "GET") {
-
-    $modo = $_GET["hub_mode"] ?? "";
-    $token = $_GET["hub_verify_token"] ?? "";
-    $desafio = $_GET["hub_challenge"] ?? "";
-
-    $tokenCorreto = getenv("WHATSAPP_VERIFY_TOKEN") ?: "";
-
-    if (
-        $modo === "subscribe" &&
-        $tokenCorreto !== "" &&
-        hash_equals($tokenCorreto, $token)
-    ) {
-        http_response_code(200);
-
-        echo $desafio;
-
-        exit;
-    }
-
-    http_response_code(403);
-
-    echo "Token de verificacao invalido";
-
-    exit;
-}
-
-/*
-|--------------------------------------------------------------------------
-| ACEITA SOMENTE POST
-|--------------------------------------------------------------------------
-*/
-
-if ($_SERVER["REQUEST_METHOD"] !== "POST") {
-
-    http_response_code(405);
-
-    echo json_encode([
-        "erro" => "Metodo nao permitido"
-    ], JSON_UNESCAPED_UNICODE);
-
-    exit;
-}
-
-/*
-|--------------------------------------------------------------------------
-| LÊ O JSON RECEBIDO
-|--------------------------------------------------------------------------
-*/
-
-$conteudo = file_get_contents("php://input");
-
-/*
-|--------------------------------------------------------------------------
-| LOG DE DIAGNÓSTICO
-|--------------------------------------------------------------------------
-*/
-
-error_log("========== WEBHOOK WHATSAPP ==========");
-error_log("METODO: " . $_SERVER["REQUEST_METHOD"]);
-error_log("PAYLOAD RECEBIDO: " . $conteudo);
-error_log("======================================");
-
-$dados = json_decode($conteudo, true);
-
-if (!$dados) {
-
-    error_log("WHATSAPP ERRO: JSON invalido.");
-
-    http_response_code(400);
-
-    echo json_encode([
-        "erro" => "JSON invalido"
-    ], JSON_UNESCAPED_UNICODE);
-
-    exit;
-}
-
-/*
-|--------------------------------------------------------------------------
-| IDENTIFICA SE É WHATSAPP
-|--------------------------------------------------------------------------
-*/
-
-$ehWhatsApp = (
-    ($dados["object"] ?? "") === "whatsapp_business_account"
-);
-
-error_log(
-    "WEBHOOK: " .
-    ($ehWhatsApp ? "Evento WhatsApp" : "Requisicao normal")
 );
 
 /*
 |--------------------------------------------------------------------------
-| VARIÁVEIS
-|--------------------------------------------------------------------------
-*/
-
-$nome = "";
-$cpf = "";
-$matricula = "";
-$setor = "";
-$categoria = "";
-$descricao = "";
-$prioridade = "Media";
-$telefone = "";
-
-/*
-|--------------------------------------------------------------------------
-| PROCESSA EVENTO DO WHATSAPP
+| PROCESSA EVENTOS DO WHATSAPP
 |--------------------------------------------------------------------------
 */
 
 if ($ehWhatsApp) {
+    $mensagensRecebidas = [];
+    $houveEvento = false;
 
-    $value = $dados["entry"][0]["changes"][0]["value"] ?? [];
+    foreach (($dados["entry"] ?? []) as $entrada) {
+        foreach (($entrada["changes"] ?? []) as $alteracao) {
+            if (($alteracao["field"] ?? "") !== "messages") {
+                continue;
+            }
 
-    /*
-    |--------------------------------------------------------------------------
-    | MENSAGEM RECEBIDA
-    |--------------------------------------------------------------------------
-    */
+            $houveEvento = true;
+            $value = $alteracao["value"] ?? [];
 
-    if (isset($value["messages"][0])) {
+            $phoneIdEvento =
+                $value["metadata"]["phone_number_id"] ?? "";
 
-        error_log("WHATSAPP: MENSAGEM RECEBIDA.");
+            $phoneIdConfigurado =
+                getenv("WHATSAPP_PHONE_NUMBER_ID") ?: "";
 
-        $mensagem = $value["messages"][0];
-
-        $nome = $value["contacts"][0]["profile"]["name"] ?? "Cliente";
-
-        $telefone = $mensagem["from"] ?? "";
-
-        $tipo = $mensagem["type"] ?? "";
-
-        error_log("WHATSAPP NOME: " . $nome);
-        error_log("WHATSAPP TELEFONE: " . $telefone);
-        error_log("WHATSAPP TIPO: " . $tipo);
-
-        if ($tipo === "text") {
-
-            $descricao = $mensagem["text"]["body"] ?? "";
-
-        } else {
-
-            $descricao = "Mensagem recebida pelo WhatsApp (" . $tipo . ")";
-        }
-
-        $cpf = "Nao informado";
-
-        $matricula = "";
-
-        $setor = "WhatsApp";
-
-        $categoria = "Atendimento WhatsApp";
-
-        $prioridade = "Media";
-
-        error_log("WHATSAPP DESCRICAO: " . $descricao);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | STATUS DE MENSAGENS
-    |--------------------------------------------------------------------------
-    */
-
-    else if (isset($value["statuses"][0])) {
-
-        foreach ($value["statuses"] as $status) {
-
-            $messageId = $status["id"] ?? "";
-
-            $statusMensagem = $status["status"] ?? "";
-
-            $destinatario = $status["recipient_id"] ?? "";
-
-            error_log("WHATSAPP STATUS: " . $statusMensagem);
-
-            error_log("WHATSAPP MESSAGE ID: " . $messageId);
-
-            error_log("WHATSAPP DESTINATARIO: " . $destinatario);
-
-            if ($statusMensagem === "failed") {
-
+            if (
+                $phoneIdEvento !== "" &&
+                $phoneIdConfigurado !== "" &&
+                $phoneIdEvento !== $phoneIdConfigurado
+            ) {
                 error_log(
-                    "WHATSAPP FALHA: " .
-                    json_encode(
-                        $status["errors"] ?? [],
-                        JSON_UNESCAPED_UNICODE
-                    )
+                    "WEBHOOK: Evento ignorado; Phone Number ID diferente."
                 );
+                continue;
+            }
+
+            foreach (($value["statuses"] ?? []) as $status) {
+                error_log(
+                    "WHATSAPP STATUS: "
+                    . ($status["status"] ?? "desconhecido")
+                    . " | ID: "
+                    . ($status["id"] ?? "ausente")
+                );
+
+                if (($status["status"] ?? "") === "failed") {
+                    error_log(
+                        "WHATSAPP FALHA: "
+                        . json_encode(
+                            $status["errors"] ?? [],
+                            JSON_UNESCAPED_UNICODE
+                        )
+                    );
+                }
+            }
+
+            $nomesContatos = [];
+
+            foreach (($value["contacts"] ?? []) as $contato) {
+                $waId = $contato["wa_id"] ?? "";
+                $nomeContato =
+                    $contato["profile"]["name"] ?? "Cliente";
+
+                if ($waId !== "") {
+                    $nomesContatos[$waId] = $nomeContato;
+                }
+            }
+
+            foreach (($value["messages"] ?? []) as $mensagem) {
+                $mensagem["_nome_contato"] =
+                    $nomesContatos[$mensagem["from"] ?? ""]
+                    ?? "Cliente";
+
+                $mensagensRecebidas[] = $mensagem;
             }
         }
-
-        http_response_code(200);
-
-        echo json_encode([
-            "status" => "Status recebido"
-        ], JSON_UNESCAPED_UNICODE);
-
-        exit;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | OUTRO EVENTO DA META
-    |--------------------------------------------------------------------------
-    */
-
-    else {
-
-        error_log("WHATSAPP: Evento sem mensagem ou status.");
-
-        http_response_code(200);
-
-        echo json_encode([
-            "status" => "Evento recebido"
-        ], JSON_UNESCAPED_UNICODE);
-
-        exit;
-    }
-}
-
-/*
-|--------------------------------------------------------------------------
-| TESTE NORMAL DA API
-|--------------------------------------------------------------------------
-*/
-
-else {
-
-    error_log("API: Requisicao normal recebida.");
-
-    $nome = $dados["nome"] ?? "";
-
-    $cpf = $dados["cpf"] ?? "";
-
-    $matricula = $dados["matricula"] ?? "";
-
-    $setor = $dados["setor"] ?? "";
-
-    $categoria = $dados["categoria"] ?? "";
-
-    $descricao = $dados["descricao"] ?? "";
-
-    $prioridade = $dados["prioridade"] ?? "Media";
-}
-
-/*
-|--------------------------------------------------------------------------
-| VALIDAÇÃO
-|--------------------------------------------------------------------------
-*/
-
-if (
-    $nome === "" ||
-    $cpf === "" ||
-    $setor === "" ||
-    $categoria === "" ||
-    $descricao === ""
-) {
-
-    error_log("ERRO: Dados obrigatorios ausentes.");
-
-    error_log(
-        "DADOS: " .
-        json_encode([
-            "nome" => $nome,
-            "cpf" => $cpf,
-            "matricula" => $matricula,
-            "setor" => $setor,
-            "categoria" => $categoria,
-            "descricao" => $descricao,
-            "prioridade" => $prioridade
-        ], JSON_UNESCAPED_UNICODE)
-    );
-
-    http_response_code(400);
-
-    echo json_encode([
-        "erro" => "Dados obrigatorios ausentes"
-    ], JSON_UNESCAPED_UNICODE);
-
-    exit;
-}
-
-/*
-|--------------------------------------------------------------------------
-| SALVA O CHAMADO NO BANCO
-|--------------------------------------------------------------------------
-*/
-
-try {
-
-    $protocolo = date("YmdHis");
-
-    error_log("BANCO: Tentando salvar chamado.");
-
-    $sql = "INSERT INTO chamados
-        (nome, cpf, matricula, setor, categoria, descricao, prioridade, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'Aberto')";
-
-    $stmt = $pdo->prepare($sql);
-
-    $stmt->execute([
-        $nome,
-        $cpf,
-        $matricula,
-        $setor,
-        $categoria,
-        $descricao,
-        $prioridade
-    ]);
-
-    error_log("BANCO: Chamado salvo com sucesso.");
-
-    /*
-    |--------------------------------------------------------------------------
-    | RESPONDE AUTOMATICAMENTE NO WHATSAPP
-    |--------------------------------------------------------------------------
-    */
-
-    if ($ehWhatsApp && $telefone !== "") {
-
-        $respostaWhatsApp =
-            "Olá, " . $nome . "! 👋\n\n" .
-            "Seu chamado foi registrado com sucesso.\n\n" .
-            "📋 Protocolo: " . $protocolo . "\n" .
-            "📌 Status: Aberto\n" .
-            "🏢 Setor: " . $setor . "\n\n" .
-            "Em breve seu atendimento será analisado.";
-
-        error_log("WHATSAPP: Enviando resposta automática.");
-
-        enviarMensagemWhatsApp(
-            $telefone,
-            $respostaWhatsApp
-        );
+    if (count($mensagensRecebidas) === 0) {
+        responderJson([
+            "status" => $houveEvento
+                ? "Evento recebido"
+                : "Evento ignorado"
+        ], 200);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | RESPOSTA DA API
-    |--------------------------------------------------------------------------
-    */
+    $resultados = [];
 
-    http_response_code(200);
+    try {
+        foreach ($mensagensRecebidas as $mensagem) {
+            $messageId = $mensagem["id"] ?? "";
+            $telefone = $mensagem["from"] ?? "";
 
-    echo json_encode([
-        "status" => "Chamado criado com sucesso!",
-        "protocolo" => $protocolo,
-        "nome" => $nome,
-        "cpf" => $cpf,
-        "matricula" => $matricula,
-        "setor" => $setor,
-        "categoria" => $categoria,
-        "descricao" => $descricao,
-        "prioridade" => $prioridade,
-        "status_chamado" => "Aberto"
-    ], JSON_UNESCAPED_UNICODE);
+            if ($messageId === "" || $telefone === "") {
+                error_log(
+                    "WHATSAPP ERRO: Mensagem sem ID ou telefone."
+                );
+                continue;
+            }
 
-} catch (PDOException $e) {
+            $nome = trim(
+                (string) ($mensagem["_nome_contato"] ?? "Cliente")
+            );
 
-    error_log("BANCO ERRO: " . $e->getMessage());
+            if ($nome === "") {
+                $nome = "Cliente";
+            }
 
-    http_response_code(500);
+            $tipo = $mensagem["type"] ?? "";
 
-    echo json_encode([
-        "erro" => "Erro ao criar chamado",
-        "detalhes" => $e->getMessage()
-    ], JSON_UNESCAPED_UNICODE);
-}
+            if ($tipo === "text") {
+                $descricao = $mensagem["text"]["body"] ?? "";
+            } else {
+                $descricao =
+                    "Mensagem recebida pelo WhatsApp (" . $tipo . ")";
+            }
 
+            if (trim($descricao) === "") {
+                error_log(
+                    "WHATSAPP: Mensagem sem conteudo; ID " . $messageId
+                );
+                continue;
+            }
+
+            $cpf = "Nao informado";
+            $matricula = "";
+            $setor = "WhatsApp";
+            $categoria = "Atendimento WhatsApp";
+            $prioridade = "Media";
+
+            $sql = "INSERT INTO chamados
+                (
+                    nome,
+                    cpf,
+                    matricula,
+                    setor,
+                    categoria,
+                    descricao,
+                    prioridade,
+                    status,
+                    whatsapp_message_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'Aberto', ?)";
+
+            try {
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([
+                    $nome,
+                    $cpf,
+                    $matricula,
+                    $setor,
+                    $categoria,
+                    $descricao,
+                    $prioridade,
+                    $messageId
+                ]);
+            } catch (PDOException $e) {
+                $codigoMySQL = $e->errorInfo[1] ?? null;
+
+                if ((int) $codigoMySQL === 1062) {
+                    error_log(
+                        "WEBHOOK DUPLICADO: mensagem ja processada. ID "
+                        . $messageId
+                    );
+
+                    $resultados[] = [
+                        "message_id" => $messageId,
+                        "status" => "duplicado_ignorado"
+                    ];
+                    continue;
+                }
+
+                throw $e;
+            }
+
+            $idChamado = $pdo->lastInsertId();
+            $protocolo = date("YmdHis");
+
+            error_log(
+                "BANCO: Chamado criado. ID "
+                . $idChamado
+                . " | mensagem "
+                . $messageId
+            );
+
+            $textoResposta =
+                "Olá, " . $nome . "! 👋\n\n"
+                . "Seu chamado foi registrado com sucesso.\n\n"
+                . "📋 Protocolo: " . $protocolo . "\n"
+                . "📌 Status: Aberto\n"
+                . "🏢 Setor: " . $setor . "\n\n"
