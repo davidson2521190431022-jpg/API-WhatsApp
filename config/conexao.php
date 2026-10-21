@@ -44,6 +44,9 @@ try {
         PDO::ATTR_EMULATE_PREPARES => false
     ]);
 
+    // Configura o horário de Brasília no MySQL
+    $pdo->exec("SET time_zone = '-03:00'");
+
 } catch (PDOException $e) {
     error_log('Erro de conexão com o banco: ' . $e->getMessage());
 
