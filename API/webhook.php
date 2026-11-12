@@ -308,7 +308,7 @@ function resumoChamadoWhatsApp($chamado)
         . "ℹ️ O status é atualizado conforme "
         . "o andamento do atendimento.\n\n"
         . "Digite *menu* para voltar às opções.\n\n"
-      ];
+      );
 
 
 /*
