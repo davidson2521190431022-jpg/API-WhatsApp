@@ -123,7 +123,7 @@ function enviarMensagemWhatsApp($destinatario, $mensagem)
 function menuSct($nome)
 {
     return "Olá, {$nome}! 👋\n\n"
-        . "🖥️ *SCT | CENTRAL DE ATENDIMENTO*\n\n"
+        . "🖥️ *SCT | Sistema de Chamados Técnicos*\n\n"
         . "Bem-vindo ao nosso sistema de suporte técnico!\n\n"
         . "Escolha uma opção:\n\n"
         . "1️⃣ Abrir novo chamado\n"
@@ -308,7 +308,7 @@ function resumoChamadoWhatsApp($chamado)
         . "ℹ️ O status é atualizado conforme "
         . "o andamento do atendimento.\n\n"
         . "Digite *menu* para voltar às opções.\n\n"
-        . "🖥️ *SCT | Soluções em Tecnologia*";
+      
 }
 
 /*
