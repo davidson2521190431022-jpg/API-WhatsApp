@@ -7,10 +7,7 @@ require_once __DIR__ . "/../config/conexao.php";
 
 date_default_timezone_set("America/Sao_Paulo");
 
-$pdo->setAttribute(
-    PDO::ATTR_ERRMODE,
-    PDO::ERRMODE_EXCEPTION
-);
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 /*
 |--------------------------------------------------------------------------
@@ -123,7 +120,7 @@ function enviarMensagemWhatsApp($destinatario, $mensagem)
 function menuSct($nome)
 {
     return "Olá, {$nome}! 👋\n\n"
-        . "🖥️ *SCT | Sistema de Chamados Técnicos*\n\n"
+        . "🖥️ *SCT | Sistema de Chamados Técnico*\n\n"
         . "Bem-vindo ao nosso sistema de suporte técnico!\n\n"
         . "Escolha uma opção:\n\n"
         . "1️⃣ Abrir novo chamado\n"
@@ -249,7 +246,7 @@ function resumoChamadoWhatsApp($chamado)
         "fechado" => [
             "⚫",
             "O atendimento foi encerrado. "
-            . "Agradecemos por utilizar o suporte da SCT."
+            . "Agradecemos por utilizar o sistema SCT."
         ]
     ];
 
@@ -307,9 +304,8 @@ function resumoChamadoWhatsApp($chamado)
         . "━━━━━━━━━━━━━━━━━━\n\n"
         . "ℹ️ O status é atualizado conforme "
         . "o andamento do atendimento.\n\n"
-        . "Digite *menu* para voltar às opções.\n\n"
-      );
-
+        . "Digite *menu* para voltar às opções.";
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -668,9 +664,11 @@ if (($dados["object"] ?? "") === "whatsapp_business_account") {
                                         $chamado["status"] ?? ""
                                     );
 
-                                    $iconeStatus = match (
-                                        mb_strtolower($statusAtual, "UTF-8")
-                                    ) {
+                                    $statusChave = function_exists("mb_strtolower")
+                                        ? mb_strtolower($statusAtual, "UTF-8")
+                                        : strtolower($statusAtual);
+
+                                    $iconeStatus = match ($statusChave) {
                                         "aberto" => "🟡",
                                         "em andamento" => "🔵",
                                         "aguardando cliente" => "🟠",
@@ -831,7 +829,7 @@ if (($dados["object"] ?? "") === "whatsapp_business_account") {
 
                         $resposta =
                             "✅ *CHAMADO ABERTO COM SUCESSO!*\n\n"
-                            . "🖥️ *SCT | CENTRAL DE ATENDIMENTO*\n\n"
+                            . "🖥️ *SCT | Sistema de Chamados Técnico*\n\n"
                             . "🔢 *Protocolo:* #{$idChamado}\n"
                             . "👤 *Solicitante:* {$nome}\n"
                             . "🏢 *Setor:* {$setor}\n"
@@ -848,8 +846,7 @@ if (($dados["object"] ?? "") === "whatsapp_business_account") {
                             . "⚠️ Não compartilhe com terceiros.\n"
                             . "━━━━━━━━━━━━━━━━━━\n\n"
                             . "Nossa equipe analisará sua solicitação.\n\n"
-                            . "Digite *menu* para ver as opções.\n\n"
-                            . "🖥️ *SCT | Soluções em Tecnologia*";
+                            . "Digite *menu* para ver as opções.";
 
                         error_log(
                             "BANCO: Chamado criado com sucesso. ID "
