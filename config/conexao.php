@@ -66,7 +66,7 @@ try {
     ]);
 
     $pdoTcc->exec("SET time_zone = '-03:00'");
-    error_log('CONEXAO_TCC_ESTABELECIDA');
+    
    
 } catch (Throwable $e) {
     error_log('Erro de conexão com o banco TCC: ' . $e->getMessage());
