@@ -1,4 +1,3 @@
-
 <?php
 
 header("Content-Type: application/json; charset=utf-8");
@@ -819,6 +818,80 @@ if (($dados["object"] ?? "") === "whatsapp_business_account") {
                         ]);
 
                         $idChamado = $pdo->lastInsertId();
+
+                        // Verifica se a conexão com o banco do TCC está disponível
+if (!$pdoTcc) {
+    throw new Exception('Não foi possível conectar ao banco do Sistema de Chamados.');
+}
+
+// Inicia a gravação no banco do TCC
+$pdoTcc->beginTransaction();
+
+try {
+
+    // Procura o cliente pelo telefone
+    $stmtCliente = $pdoTcc->prepare("
+        SELECT id_cliente
+        FROM clientes
+        WHERE telefone = ?
+        LIMIT 1
+    ");
+
+    $stmtCliente->execute([$telefone]);
+
+    $clienteTcc = $stmtCliente->fetch(PDO::FETCH_ASSOC);
+
+    // Se o cliente não existir, cadastra
+    if (!$clienteTcc) {
+
+        $stmtNovoCliente = $pdoTcc->prepare("
+            INSERT INTO clientes
+                (nome, cpf, email, telefone, data_cadastro)
+            VALUES
+                (?, NULL, NULL, ?, NOW())
+        ");
+
+        $stmtNovoCliente->execute([
+            $nome,
+            $telefone
+        ]);
+
+        $idClienteTcc = $pdoTcc->lastInsertId();
+
+    } else {
+
+        $idClienteTcc = $clienteTcc['id_cliente'];
+
+    }
+
+    // Cria o chamado no banco do TCC
+    $stmtChamadoTcc = $pdoTcc->prepare("
+        INSERT INTO chamados
+            (id_cliente, id_usuario, id_categoria, assunto, descricao, status, prioridade)
+        VALUES
+            (?, NULL, NULL, ?, ?, 'aberto', 'media')
+    ");
+
+    $stmtChamadoTcc->execute([
+        $idClienteTcc,
+        'Atendimento via WhatsApp - ' . $setor,
+        $texto
+    ]);
+
+    $idChamadoTcc = $pdoTcc->lastInsertId();
+
+    $pdoTcc->commit();
+
+    error_log('Chamado criado no banco TCC. ID: ' . $idChamadoTcc);
+
+} catch (Throwable $e) {
+
+    if ($pdoTcc->inTransaction()) {
+        $pdoTcc->rollBack();
+    }
+
+    throw $e;
+}
 
                         atualizarEtapa(
                             $pdo,
