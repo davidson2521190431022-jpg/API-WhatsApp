@@ -880,9 +880,20 @@ try {
 
     $idChamadoTcc = $pdoTcc->lastInsertId();
 
+    // Confirma a criação do chamado no banco do TCC.
     $pdoTcc->commit();
 
-    error_log('Chamado criado no banco TCC. ID: ' . $idChamadoTcc);
+    // Vincula o protocolo do WhatsApp ao chamado correspondente no Admin.
+    // A conexão $pdo já está dentro da transação iniciada no webhook.
+    $stmtVinculo = $pdo->prepare(
+        "UPDATE chamados SET id_chamado_tcc = ? WHERE id = ?"
+    );
+    $stmtVinculo->execute([$idChamadoTcc, $idChamado]);
+
+    error_log(
+        'Chamados vinculados: WhatsApp #' . $idChamado .
+        ' | Admin #' . $idChamadoTcc
+    );
 
 } catch (Throwable $e) {
 
