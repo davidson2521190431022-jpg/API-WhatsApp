@@ -179,6 +179,77 @@ function textoCurto($texto, $limite = 110)
 
 /*
 |--------------------------------------------------------------------------
+| CLASSIFICAÇÃO AUTOMÁTICA DE PRIORIDADE
+|--------------------------------------------------------------------------
+| A prioridade é uma sugestão inicial. O técnico pode alterá-la no painel.
+| Ordem de avaliação: Alta > Média > Baixa; padrão: Média.
+*/
+
+function classificarPrioridadeChamado($descricao)
+{
+    $texto = trim((string) $descricao);
+
+    if (function_exists("mb_strtolower")) {
+        $texto = mb_strtolower($texto, "UTF-8");
+    } else {
+        $texto = strtolower($texto);
+    }
+
+    // Remove acentos para reconhecer "não" e "nao" da mesma forma.
+    $convertido = iconv("UTF-8", "ASCII//TRANSLIT//IGNORE", $texto);
+    if ($convertido !== false) {
+        $texto = strtolower($convertido);
+    }
+
+    $texto = preg_replace('/[^a-z0-9\s]/', ' ', $texto) ?? $texto;
+    $texto = preg_replace('/\s+/', ' ', $texto) ?? $texto;
+
+    $alta = [
+        '/\b(todos|todas|varios|varias|inteiro|inteira|toda a escola|todo o setor|escola inteira|setor inteiro)\b.{0,65}\b(sem internet|sem rede|fora do ar|parados|paradas|nao funcionam)\b/',
+        '/\b(sem internet|sem rede|fora do ar)\b.{0,65}\b(todos|todas|varios|varias|setor inteiro|escola inteira)\b/',
+        '/\b(servidor|rede da escola|rede do setor|sistema principal|sistema essencial)\b.{0,50}\b(caiu|parou|inoperante|indisponivel|fora do ar|nao funciona)\b/',
+        '/\b(sistema fora do ar|sistema indisponivel|falha geral|queda geral|ataque cibernetico|ransomware|vazamento de dados|dados vazados)\b/',
+    ];
+
+    foreach ($alta as $regra) {
+        if (preg_match($regra, $texto)) {
+            return "Alta";
+        }
+    }
+
+    $media = [
+        '/\b(sem internet|sem conexao|internet caiu|internet nao funciona|rede caiu)\b/',
+        '/\b(computador|pc|notebook|monitor|impressora|scanner)\b.{0,45}\b(nao liga|nao funciona|parou|quebrou|com defeito|nao imprime)\b/',
+        '/\b(nao liga|nao funciona|parou|quebrou|com defeito|nao imprime)\b.{0,45}\b(computador|pc|notebook|monitor|impressora|scanner)\b/',
+        '/\b(programa|aplicativo|software|sistema)\b.{0,45}\b(erro|travando|travou|fecha sozinho|nao abre|nao funciona)\b/',
+        '/\b(erro ao iniciar|erro ao acessar|nao consigo acessar|computador lento|pc lento|muito lento|tela azul|nao inicia)\b/',
+    ];
+
+    foreach ($media as $regra) {
+        if (preg_match($regra, $texto)) {
+            return "Media";
+        }
+    }
+
+    $baixa = [
+        '/\b(duvida|orientacao|ajuda para usar|como usar|como configurar|configurar|instalar|atualizar|ajustar|personalizar)\b/',
+        '/\b(mouse|teclado)\b.{0,35}\b(com defeito|falhando|nao funciona|quebrou)\b/',
+        '/\b(mouse|teclado|papel de parede|atalho)\b.{0,35}\b(trocar|substituir|configurar|ajustar|instalar)\b/',
+        '/\b(trocar|substituir|configurar|ajustar|instalar)\b.{0,35}\b(mouse|teclado|papel de parede|atalho)\b/',
+    ];
+
+    foreach ($baixa as $regra) {
+        if (preg_match($regra, $texto)) {
+            return "Baixa";
+        }
+    }
+
+    // Descrições vagas precisam de avaliação humana; não supomos baixa urgência.
+    return "Media";
+}
+
+/*
+|--------------------------------------------------------------------------
 | RESUMO COMPLETO DO CHAMADO
 |--------------------------------------------------------------------------
 */
@@ -783,6 +854,13 @@ if (($dados["object"] ?? "") === "whatsapp_business_account") {
                             PASSWORD_DEFAULT
                         );
 
+                        $prioridadeCalculada = classificarPrioridadeChamado($texto);
+                        $prioridadeTcc = match ($prioridadeCalculada) {
+                            "Alta" => "alta",
+                            "Baixa" => "baixa",
+                            default => "media"
+                        };
+
                         $stmt = $pdo->prepare(
                             "INSERT INTO chamados
                              (
@@ -811,7 +889,7 @@ if (($dados["object"] ?? "") === "whatsapp_business_account") {
                             $setor,
                             "Atendimento WhatsApp",
                             $texto,
-                            "Media",
+                            $prioridadeCalculada,
                             $idMensagem,
                             $telefone,
                             $hash
@@ -869,13 +947,14 @@ try {
         INSERT INTO chamados
             (id_cliente, id_usuario, id_categoria, assunto, descricao, status, prioridade)
         VALUES
-            (?, NULL, NULL, ?, ?, 'aberto', 'media')
+            (?, NULL, NULL, ?, ?, 'aberto', ?)
     ");
 
     $stmtChamadoTcc->execute([
         $idClienteTcc,
         'Atendimento via WhatsApp - ' . $setor,
-        $texto
+        $texto,
+        $prioridadeTcc
     ]);
 
     $idChamadoTcc = $pdoTcc->lastInsertId();
@@ -919,7 +998,7 @@ try {
                             . "🏢 *Setor:* {$setor}\n"
                             . "📝 *Problema:* "
                             . textoCurto($texto, 450) . "\n"
-                            . "🚩 *Prioridade:* Média\n"
+                            . "🚩 *Prioridade:* " . ($prioridadeCalculada === "Media" ? "Média" : $prioridadeCalculada) . "\n"
                             . "🟡 *Status:* Aberto\n\n"
                             . "━━━━━━━━━━━━━━━━━━\n"
                             . "🔐 *CÓDIGO DE CONSULTA*\n\n"
@@ -934,7 +1013,7 @@ try {
 
                         error_log(
                             "BANCO: Chamado criado com sucesso. ID "
-                            . $idChamado
+                            . $idChamado . " | Prioridade: " . $prioridadeCalculada
                         );
 
                     /*
